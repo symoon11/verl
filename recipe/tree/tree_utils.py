@@ -1,25 +1,41 @@
 from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass, field
 from queue import PriorityQueue
 from typing import Callable, Optional
 
 import numpy as np
+from datasets import load_dataset
+from reward_function import compute_score
 from transformers import PreTrainedTokenizer
+from vllm import LLM, SamplingParams, TokensPrompt
 
 
+@dataclass
 class Node:
     token_ids: list[int]
     parent: Optional[Node] = None
-    children: list[Node] = []
-    value: float = 0.0
-    count: int = 0
+    children: list[Node] = field(default_factory=list)
+    reward: float = 0.0
+    values: list[float] = field(default_factory=list)
 
-    def __init__(self, token_ids: list[int]):
-        self.token_ids = token_ids
+    def __len__(self) -> int:
+        try:
+            return len(self.token_ids) - self.token_ids[::-1].index(151668)
+        except ValueError:
+            return len(self.token_ids)
 
     def __lt__(self, other: Node) -> bool:
-        return len(self.token_ids) > len(other.token_ids)
+        return len(self) > len(other)
+
+    @property
+    def is_root(self) -> bool:
+        return self.parent is None
+
+    @property
+    def is_leaf(self) -> bool:
+        return len(self.children) == 0
 
     def add_child(self, node: Node):
         node.parent = self
@@ -30,50 +46,47 @@ class Node:
         self.children.remove(node)
 
     def branch(self) -> tuple[Node, Node]:
-        start = int(0.25 * len(self.token_ids))
-        end = int(0.75 * len(self.token_ids))
-        idx = np.random.randint(start, end)
+        idx = np.random.randint(0, len(self))
         node = Node(self.token_ids[:idx])
+        self.token_ids = self.token_ids[idx:]
         self.parent.add_child(node)
         self.parent.remove_child(self)
-        self.token_ids = self.token_ids[idx:]
         node.add_child(self)
         return node, self
 
 
+@dataclass
 class Tree:
-    root: Node
-    node: Node
-    leaf_nodes: list[Node] = []
-    queue: PriorityQueue[Node] = PriorityQueue()
+    token_ids: list[int]
+    root_node: Node = field(init=False)
+    curr_node: Node = field(init=False)
+    leaf_nodes: list[Node] = field(default_factory=list)
+    queue: PriorityQueue[Node] = field(default_factory=PriorityQueue)
 
-    def __init__(self, token_ids: list[int]):
-        self.root = Node(token_ids)
+    def __post_init__(self):
+        self.root_node = Node(self.token_ids)
+        self.curr_node = self.root_node
 
-    def agg_token_ids(self, node: Node, skip_root: bool = False) -> list[int]:
-        token_ids_list = []
-        while node is not None:
-            if skip_root and node == self.root:
-                break
-            token_ids_list.append(node.token_ids)
+    def agg_token_ids(self, node: Node, skip_root_node: bool = False) -> list[int]:
+        token_ids = []
+        while node is not None and not (skip_root_node and node.is_root):
+            token_ids.append(node.token_ids)
             node = node.parent
-        token_ids = list(itertools.chain.from_iterable(reversed(token_ids_list)))
+        token_ids = list(itertools.chain.from_iterable(reversed(token_ids)))
         return token_ids
 
     def branch(self) -> list[int]:
-        if self.queue.empty():
-            self.node = self.root
-        else:
+        if not self.queue.empty():
             node = self.queue.get()
-            self.node, node = node.branch()
-            self.queue.put(self.node)
+            self.curr_node, node = node.branch()
+            self.queue.put(self.curr_node)
             self.queue.put(node)
-        token_ids = self.agg_token_ids(self.node)
+        token_ids = self.agg_token_ids(self.curr_node)
         return token_ids
 
     def update(self, token_ids: list[int]):
         node = Node(token_ids)
-        self.node.add_child(node)
+        self.curr_node.add_child(node)
         self.leaf_nodes.append(node)
         self.queue.put(node)
 
@@ -86,50 +99,47 @@ class Tree:
         compute_score: Callable[..., float],
     ):
         for node in self.leaf_nodes:
-            response_ids = self.agg_token_ids(node, skip_root=True)
+            response_ids = self.agg_token_ids(node, skip_root_node=True)
             response_str = tokenizer.decode(response_ids, skip_special_tokens=True)
-            score = compute_score(data_source, response_str, ground_truth, extra_info)
-            node.value = score
-            node.count = 1
+            reward = compute_score(data_source, response_str, ground_truth, extra_info)
+            node.reward = reward
 
     def compute_value(self):
-        pass
+        for node in self.leaf_nodes:
+            reward = node.reward
+            while node is not None:
+                node.values.append(reward)
+                node = node.parent
 
     def compute_advantage(self):
         pass
 
 
-class BatchTree:
-    trees: list[Tree]
-
-    def __init__(self, input_ids: list[list[int]]):
-        self.trees = [Tree(input_ids[i]) for i in range(len(input_ids))]
-
-    def branch(self) -> list[list[int]]:
-        input_ids = []
-        for i in range(len(self.trees)):
-            input_ids.append(self.trees[i].branch())
-        return input_ids
-
-    def update(self, input_ids: list[list[int]]):
-        for i in range(len(self.trees)):
-            self.trees[i].update(input_ids[i])
-
-    def compute_reward(
-        self,
-        data_source: list[str],
-        ground_truth: list[str],
-        extra_info: list[dict[str, any]],
-        tokenizer: PreTrainedTokenizer,
-        compute_score: Callable[..., float],
-    ):
-        for i in range(len(self.trees)):
-            self.trees[i].compute_reward(data_source[i], ground_truth[i], extra_info[i], tokenizer, compute_score)
-
-    def compute_value(self):
-        for i in range(len(self.trees)):
-            self.trees[i].compute_value()
-
-    def compute_advantage(self):
-        for i in range(len(self.trees)):
-            self.trees[i].compute_advantage()
+if __name__ == "__main__":
+    llm = LLM(
+        model="Qwen/Qwen3-1.7B",
+        max_model_len=10240,
+        tensor_parallel_size=1,
+        enable_prefix_caching=True,
+    )
+    tokenizer = llm.get_tokenizer()
+    sampling_params = SamplingParams(temperature=1.0, max_tokens=4096)
+    dataset = load_dataset("CMU-AIRe/e3-math-easy", split="train")
+    example = dataset[300]
+    prompt = example["prompt"]
+    ground_truth = example["reward_model"]["ground_truth"]
+    prompt_ids = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
+    tree = Tree(token_ids=prompt_ids)
+    for _ in range(8):
+        prompt_ids = tree.branch()
+        prompt = TokensPrompt(prompt_token_ids=prompt_ids)
+        response = llm.generate(prompt, sampling_params=sampling_params)
+        response_ids = response[0].outputs[0].token_ids
+        tree.update(response_ids)
+    print("Compute reward")
+    tree.compute_reward("", ground_truth, {}, tokenizer, compute_score)
+    print("Compute value")
+    tree.compute_value()
+    for i, node in enumerate(tree.leaf_nodes):
+        print(f"Leaf node {i}th val: {node.values}")
+    print(f"Root node val: {tree.root_node.values}")
