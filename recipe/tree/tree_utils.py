@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from queue import PriorityQueue
 from typing import List, Optional, Tuple
+import itertools
 
 import numpy as np
+from transformers import PreTrainedTokenizer
+from verl.workers.reward_manager.abstract import AbstractRewardManager
 
 
 class Node:
@@ -18,14 +21,6 @@ class Node:
 
     def __lt__(self, other: Node) -> bool:
         return len(self.token_ids) > len(other.token_ids)
-
-    def agg_token_ids(self) -> List[int]:
-        token_ids = self.token_ids
-        node = self.parent
-        while node is not None:
-            token_ids = node.token_ids + token_ids
-            node = node.parent
-        return token_ids
 
     def add_child(self, node: Node):
         node.parent = self
@@ -56,6 +51,16 @@ class Tree:
     def __init__(self, token_ids: List[int]):
         self.root = Node(token_ids)
 
+    def agg_token_ids(self, node: Node, skip_root: bool = False) -> List[int]:
+        token_ids_list = []
+        while node is not None:
+            if skip_root and node == self.root:
+                break
+            token_ids_list.append(node.token_ids)
+            node = node.parent
+        token_ids = list(itertools.chain.from_iterable(reversed(token_ids_list)))
+        return token_ids
+
     def branch(self) -> List[int]:
         if self.queue.empty():
             self.node = self.root
@@ -64,7 +69,7 @@ class Tree:
             self.node, node = node.branch()
             self.queue.put(self.node)
             self.queue.put(node)
-        token_ids = self.node.agg_token_ids()
+        token_ids = self.agg_token_ids(self.node)
         return token_ids
 
     def update(self, token_ids: List[int]):
@@ -73,7 +78,7 @@ class Tree:
         self.leaf_nodes.append(node)
         self.queue.put(node)
 
-    def compute_reward(self):
+    def compute_reward(self, tokenizer: PreTrainedTokenizer):
         pass
 
     def compute_value(self):
