@@ -73,7 +73,13 @@ class Tree:
         self.leaf_nodes.append(node)
         self.queue.put(node)
 
-    def compute_reward(self, ):
+    def compute_reward(self):
+        pass
+
+    def compute_value(self):
+        pass
+
+    def compute_advantage(self):
         pass
 
 
@@ -97,3 +103,11 @@ class BatchTree:
     def compute_reward(self):
         for tree in self.trees:
             tree.compute_reward()
+
+    def compute_value(self):
+        for tree in self.trees:
+            tree.compute_value()
+
+    def compute_advantage(self):
+        for tree in self.trees:
+            tree.compute_advantage()
