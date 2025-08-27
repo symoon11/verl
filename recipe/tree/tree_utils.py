@@ -5,7 +5,6 @@ from queue import PriorityQueue
 from typing import Callable, Optional
 
 import numpy as np
-
 from transformers import PreTrainedTokenizer
 
 
