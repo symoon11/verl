@@ -78,12 +78,17 @@ class Tree:
         self.queue.put(node)
 
     def compute_reward(
-        self, data_source: str, ground_truth: str, tokenizer: PreTrainedTokenizer, compute_score: Callable[..., float]
+        self,
+        data_source: str,
+        ground_truth: str,
+        extra_info: dict[str, any],
+        tokenizer: PreTrainedTokenizer,
+        compute_score: Callable[..., float],
     ):
         for node in self.leaf_nodes:
             response_ids = self.agg_token_ids(node, skip_root=True)
             response_str = tokenizer.decode(response_ids, skip_special_tokens=True)
-            score = compute_score(data_source, response_str, ground_truth)
+            score = compute_score(data_source, response_str, ground_truth, extra_info)
             node.value = score
             node.count = 1
 
@@ -97,34 +102,34 @@ class Tree:
 class BatchTree:
     trees: list[Tree]
 
-    def __init__(self, token_ids_list: list[list[int]]):
-        self.trees = [Tree(token_ids) for token_ids in token_ids_list]
+    def __init__(self, input_ids: list[list[int]]):
+        self.trees = [Tree(input_ids[i]) for i in range(len(input_ids))]
 
     def branch(self) -> list[list[int]]:
-        token_ids_list = []
-        for tree in self.trees:
-            token_ids = tree.branch()
-            token_ids_list.append(token_ids)
-        return token_ids_list
+        input_ids = []
+        for i in range(len(self.trees)):
+            input_ids.append(self.trees[i].branch())
+        return input_ids
 
-    def update(self, token_ids_list: list[list[int]]):
-        for tree, token_ids in zip(self.trees, token_ids_list, strict=True):
-            tree.update(token_ids)
+    def update(self, input_ids: list[list[int]]):
+        for i in range(len(self.trees)):
+            self.trees[i].update(input_ids[i])
 
     def compute_reward(
         self,
-        data_source_list: list[str],
-        ground_truth_list: list[str],
+        data_source: list[str],
+        ground_truth: list[str],
+        extra_info: list[dict[str, any]],
         tokenizer: PreTrainedTokenizer,
         compute_score: Callable[..., float],
     ):
-        for tree, data_source, ground_truth in zip(self.trees, data_source_list, ground_truth_list, strict=True):
-            tree.compute_reward(data_source, ground_truth, tokenizer, compute_score)
+        for i in range(len(self.trees)):
+            self.trees[i].compute_reward(data_source[i], ground_truth[i], extra_info[i], tokenizer, compute_score)
 
     def compute_value(self):
-        for tree in self.trees:
-            tree.compute_value()
+        for i in range(len(self.trees)):
+            self.trees[i].compute_value()
 
     def compute_advantage(self):
-        for tree in self.trees:
-            tree.compute_advantage()
+        for i in range(len(self.trees)):
+            self.trees[i].compute_advantage()
