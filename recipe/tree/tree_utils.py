@@ -17,8 +17,8 @@ class Node:
     token_ids: list[int]
     parent: Optional[Node] = None
     children: list[Node] = field(default_factory=list)
-    reward: float = 0.0
     values: list[float] = field(default_factory=list)
+    advantage: float = 0.0
 
     def __len__(self) -> int:
         try:
@@ -98,21 +98,34 @@ class Tree:
         tokenizer: PreTrainedTokenizer,
         compute_score: Callable[..., float],
     ):
-        for node in self.leaf_nodes:
+        for i, node in enumerate(self.leaf_nodes):
             response_ids = self.agg_token_ids(node, skip_root_node=True)
             response_str = tokenizer.decode(response_ids, skip_special_tokens=True)
             reward = compute_score(data_source, response_str, ground_truth, extra_info)
-            node.reward = reward
+            print(f"Leaf node {i}, reward: {reward}")
+            node.values.append(reward)
 
-    def compute_value(self):
-        for node in self.leaf_nodes:
-            reward = node.reward
-            while node is not None:
-                node.values.append(reward)
-                node = node.parent
+    def compute_value(self, node: Optional[Node] = None):
+        if node is None:
+            node = self.root_node
+        for child in node.children:
+            self.compute_value(node=child)
+            node.values.extend(child.values)
 
-    def compute_advantage(self):
-        pass
+    def compute_traj_advantage(self, node: Node) -> float:
+        return np.mean(node.values) - np.mean(self.root_node.values)
+
+    def compute_step_advantage(self, node: Node) -> float:
+        return 0.0 if node.is_root else np.mean(node.values) - np.mean(node.parent.values)
+
+    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0, id = "0"):
+        if node is None:
+            node = self.root_node
+        advantage = self.compute_traj_advantage(node) + weight * self.compute_step_advantage(node)
+        print(f"Node {id}, advantage: {advantage}")
+        node.advantage = advantage
+        for i, child in enumerate(node.children):
+            self.compute_advantage(node=child, weight=weight, id=f"{id}.{i}")
 
 
 if __name__ == "__main__":
@@ -140,6 +153,5 @@ if __name__ == "__main__":
     tree.compute_reward("", ground_truth, {}, tokenizer, compute_score)
     print("Compute value")
     tree.compute_value()
-    for i, node in enumerate(tree.leaf_nodes):
-        print(f"Leaf node {i}th val: {node.values}")
-    print(f"Root node val: {tree.root_node.values}")
+    print("Compute advantage")
+    tree.compute_advantage()
