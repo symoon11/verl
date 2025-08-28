@@ -133,44 +133,12 @@ class Tree:
     def compute_step_advantage(self, node: Node) -> float:
         return np.mean(node.values) - np.mean(node.parent.values)
 
-    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0, id = "0"):
+    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0):
         if node is None:
             node = self.root_node
-        # if not node.is_root:
-        #     traj_advantage = self.compute_traj_advantage(node)
-        #     step_advantage = self.compute_step_advantage(node)
-        #     node.advantage = traj_advantage + weight * step_advantage
-        print(f"Node {id}")
-        for i, child in enumerate(node.children):
-            self.compute_advantage(node=child, weight=weight, id=f"{id}.{i}")
-
-
-if __name__ == "__main__":
-    from datasets import load_dataset
-    from vllm import LLM, SamplingParams, TokensPrompt
-
-    llm = LLM(
-        model="qwen/Qwen3-0.6B",
-        max_model_len=10240,
-        tensor_parallel_size=1,
-        gpu_memory_utilization=0.95,
-        enable_prefix_caching=True,
-    )
-    tokenizer = llm.get_tokenizer()
-    sampling_params = SamplingParams(
-        temperature=1.0,
-        max_tokens=8192,
-    )
-    dataset = load_dataset("CMU-AIRe/e3-math-easy", split="train")
-    example = dataset[300]
-    prompt = example["prompt"]
-    ground_truth = example["reward_model"]["ground_truth"]
-    token_ids = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
-    tree = Tree(tokenizer, token_ids)
-    for _ in range(8):
-        prompt_token_ids = tree.get_prompt()
-        prompt = TokensPrompt(prompt_token_ids=prompt_token_ids)
-        response = llm.generate(prompt, sampling_params=sampling_params)
-        response_token_ids = response[0].outputs[0].token_ids
-        tree.update_response(response_token_ids)
-    tree.compute_advantage()
+        if not node.is_root:
+            traj_advantage = self.compute_traj_advantage(node)
+            step_advantage = self.compute_step_advantage(node)
+            node.advantage = traj_advantage + weight * step_advantage
+        for child in node.children:
+            self.compute_advantage(node=child, weight=weight)
