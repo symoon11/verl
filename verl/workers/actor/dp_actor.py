@@ -528,7 +528,6 @@ class DataParallelPPOActor(BasePPOActor):
                     micro_batch_metrics = {}
                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
                     responses = model_inputs["responses"]
-                    max_response_length = responses.size(-1)
                     response_mask = model_inputs["response_mask"]
                     ref_log_prob = model_inputs["ref_log_prob"]
                     old_log_prob = model_inputs["old_log_probs"]
@@ -554,8 +553,6 @@ class DataParallelPPOActor(BasePPOActor):
                         use_ref_model=self.config.use_kl_loss,
                         epsilon_low=self.config.clip_ratio_low,
                         epsilon_high=self.config.clip_ratio_high,
-                        loss_type="dr_grpo",
-                        max_completion_length=max_response_length,
                         temperature=temperature,
                     )
 
