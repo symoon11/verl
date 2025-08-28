@@ -529,7 +529,6 @@ class DataParallelPPOActor(BasePPOActor):
                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
                     responses = model_inputs["responses"]
                     response_mask = model_inputs["response_mask"]
-                    ref_log_prob = model_inputs["ref_log_prob"]
                     old_log_prob = model_inputs["old_log_probs"]
                     advantages = model_inputs["advantages"]
 
@@ -546,6 +545,11 @@ class DataParallelPPOActor(BasePPOActor):
                         old_log_prob = None
                     else:
                         old_log_prob = model_inputs["old_log_probs"]
+
+                    if self.config.use_kl_loss:
+                        ref_log_prob = model_inputs["ref_log_prob"]
+                    else:
+                        ref_log_prob = None
 
                     policy_loss_fn = LigerFusedLinearGRPOLoss(
                         alpha=self.config.entropy_coeff,
