@@ -42,7 +42,8 @@ class Node:
         node.parent = None
         self.children.remove(node)
 
-    def branch(self, idx: int) -> Node:
+    def branch(self) -> Node:
+        idx = np.random.choice(len(self))
         if idx == 0:
             return self.parent
         else:
@@ -80,21 +81,22 @@ class Tree:
             token_ids.extend(node.token_ids)
         return token_ids
 
-    def branch(self) -> list[int]:
+    def branch(self) -> Node:
+        idx = np.random.choice(len(self.leaf_nodes))
+        nodes = self.get_ancestor_nodes(self.leaf_nodes[idx], skip_root_node=True)
+        lengths = [len(node) for node in nodes]
+        probs = np.array(lengths) / np.sum(lengths)
+        idx = np.random.choice(len(nodes), p=probs)
+        node = nodes[idx].branch()
+        return node
+
+    def get_prompt(self) -> list[int]:
         if len(self.leaf_nodes) > 0:
-            node = np.random.choice(self.leaf_nodes)
-            nodes = self.get_ancestor_nodes(node, skip_root_node=True)
-            lengths = [len(node) for node in nodes]
-            idx = np.random.randint(0, np.sum(lengths))
-            for node, length in zip(nodes, lengths, strict=True):
-                if idx < length:
-                    self.curr_node = node.branch(idx)
-                    break
-                idx -= length
+            self.curr_node = self.branch()
         token_ids = self.agg_token_ids(self.curr_node)
         return token_ids
 
-    def update(self, token_ids: list[int]):
+    def update_response(self, token_ids: list[int]):
         node = Node(token_ids)
         self.curr_node.add_child(node)
         self.leaf_nodes.append(node)
@@ -107,11 +109,10 @@ class Tree:
         tokenizer: PreTrainedTokenizer,
         compute_score: Callable[..., float],
     ):
-        for i, node in enumerate(self.leaf_nodes):
+        for node in self.leaf_nodes:
             response_ids = self.agg_token_ids(node, skip_root_node=True)
             response_str = tokenizer.decode(response_ids, skip_special_tokens=True)
             reward = compute_score(data_source, response_str, ground_truth, extra_info)
-            print(f"Leaf node {i}, reward: {reward}")
             node.values.append(reward)
 
     def compute_value(self, node: Optional[Node] = None):
@@ -127,40 +128,12 @@ class Tree:
     def compute_step_advantage(self, node: Node) -> float:
         return np.mean(node.values) - np.mean(node.parent.values)
 
-    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0, id="0"):
+    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0):
         if node is None:
             node = self.root_node
         if not node.is_root:
-            node.advantage = self.compute_traj_advantage(node) + weight * self.compute_step_advantage(node)
-            print(f"Node {id}, advantage: {node.advantage}")
-        for i, child in enumerate(node.children):
-            self.compute_advantage(node=child, weight=weight, id=f"{id}.{i}")
-
-
-if __name__ == "__main__":
-    llm = LLM(
-        model="Qwen/Qwen3-1.7B",
-        max_model_len=10240,
-        tensor_parallel_size=1,
-        enable_prefix_caching=True,
-    )
-    tokenizer = llm.get_tokenizer()
-    sampling_params = SamplingParams(temperature=1.0, max_tokens=4096)
-    dataset = load_dataset("CMU-AIRe/e3-math-easy", split="train")
-    example = dataset[300]
-    prompt = example["prompt"]
-    ground_truth = example["reward_model"]["ground_truth"]
-    prompt_ids = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
-    tree = Tree(token_ids=prompt_ids)
-    for _ in range(8):
-        prompt_ids = tree.branch()
-        prompt = TokensPrompt(prompt_token_ids=prompt_ids)
-        response = llm.generate(prompt, sampling_params=sampling_params)
-        response_ids = response[0].outputs[0].token_ids
-        tree.update(response_ids)
-    print("Compute reward")
-    tree.compute_reward("", ground_truth, {}, tokenizer, compute_score)
-    print("Compute value")
-    tree.compute_value()
-    print("Compute advantage")
-    tree.compute_advantage()
+            traj_advantage = self.compute_traj_advantage(node)
+            step_advantage = self.compute_step_advantage(node)
+            node.advantage = traj_advantage + weight * step_advantage
+        for child in node.children:
+            self.compute_advantage(node=child, weight=weight)
