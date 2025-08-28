@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass, field
-from queue import PriorityQueue
 from typing import Callable, Optional
 
 import numpy as np
@@ -10,6 +8,8 @@ from datasets import load_dataset
 from reward_function import compute_score
 from transformers import PreTrainedTokenizer
 from vllm import LLM, SamplingParams, TokensPrompt
+
+THINK_TOKEN_ID = 151668
 
 
 @dataclass
@@ -22,12 +22,9 @@ class Node:
 
     def __len__(self) -> int:
         try:
-            return len(self.token_ids) - self.token_ids[::-1].index(151668)
+            return len(self.token_ids) - self.token_ids[::-1].index(THINK_TOKEN_ID)
         except ValueError:
             return len(self.token_ids)
-
-    def __lt__(self, other: Node) -> bool:
-        return len(self) > len(other)
 
     @property
     def is_root(self) -> bool:
@@ -45,14 +42,16 @@ class Node:
         node.parent = None
         self.children.remove(node)
 
-    def branch(self) -> tuple[Node, Node]:
-        idx = np.random.randint(0, len(self))
-        node = Node(self.token_ids[:idx])
-        self.token_ids = self.token_ids[idx:]
-        self.parent.add_child(node)
-        self.parent.remove_child(self)
-        node.add_child(self)
-        return node, self
+    def branch(self, idx: int) -> Node:
+        if idx == 0:
+            return self.parent
+        else:
+            node = Node(self.token_ids[:idx])
+            self.token_ids = self.token_ids[idx:]
+            self.parent.add_child(node)
+            self.parent.remove_child(self)
+            node.add_child(self)
+            return node
 
 
 @dataclass
@@ -61,26 +60,37 @@ class Tree:
     root_node: Node = field(init=False)
     curr_node: Node = field(init=False)
     leaf_nodes: list[Node] = field(default_factory=list)
-    queue: PriorityQueue[Node] = field(default_factory=PriorityQueue)
 
     def __post_init__(self):
         self.root_node = Node(self.token_ids)
         self.curr_node = self.root_node
 
+    def get_ancestor_nodes(self, node: Node, skip_root_node: bool = False) -> list[Node]:
+        nodes = []
+        while node is not None and not (skip_root_node and node.is_root):
+            nodes.append(node)
+            node = node.parent
+        nodes.reverse()
+        return nodes
+
     def agg_token_ids(self, node: Node, skip_root_node: bool = False) -> list[int]:
         token_ids = []
-        while node is not None and not (skip_root_node and node.is_root):
-            token_ids.append(node.token_ids)
-            node = node.parent
-        token_ids = list(itertools.chain.from_iterable(reversed(token_ids)))
+        nodes = self.get_ancestor_nodes(node, skip_root_node=skip_root_node)
+        for node in nodes:
+            token_ids.extend(node.token_ids)
         return token_ids
 
     def branch(self) -> list[int]:
-        if not self.queue.empty():
-            node = self.queue.get()
-            self.curr_node, node = node.branch()
-            self.queue.put(self.curr_node)
-            self.queue.put(node)
+        if len(self.leaf_nodes) > 0:
+            node = np.random.choice(self.leaf_nodes)
+            nodes = self.get_ancestor_nodes(node, skip_root_node=True)
+            lengths = [len(node) for node in nodes]
+            idx = np.random.randint(0, np.sum(lengths))
+            for node, length in zip(nodes, lengths, strict=True):
+                if idx < length:
+                    self.curr_node = node.branch(idx)
+                    break
+                idx -= length
         token_ids = self.agg_token_ids(self.curr_node)
         return token_ids
 
@@ -88,7 +98,6 @@ class Tree:
         node = Node(token_ids)
         self.curr_node.add_child(node)
         self.leaf_nodes.append(node)
-        self.queue.put(node)
 
     def compute_reward(
         self,
@@ -116,14 +125,14 @@ class Tree:
         return np.mean(node.values) - np.mean(self.root_node.values)
 
     def compute_step_advantage(self, node: Node) -> float:
-        return 0.0 if node.is_root else np.mean(node.values) - np.mean(node.parent.values)
+        return np.mean(node.values) - np.mean(node.parent.values)
 
-    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0, id = "0"):
+    def compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0, id="0"):
         if node is None:
             node = self.root_node
-        advantage = self.compute_traj_advantage(node) + weight * self.compute_step_advantage(node)
-        print(f"Node {id}, advantage: {advantage}")
-        node.advantage = advantage
+        if not node.is_root:
+            node.advantage = self.compute_traj_advantage(node) + weight * self.compute_step_advantage(node)
+            print(f"Node {id}, advantage: {node.advantage}")
         for i, child in enumerate(node.children):
             self.compute_advantage(node=child, weight=weight, id=f"{id}.{i}")
 
