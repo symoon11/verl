@@ -4,10 +4,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 import numpy as np
-from datasets import load_dataset
-from reward_function import compute_score
 from transformers import PreTrainedTokenizer
-from vllm import LLM, SamplingParams, TokensPrompt
 
 THINK_TOKEN_ID = 151668
 
