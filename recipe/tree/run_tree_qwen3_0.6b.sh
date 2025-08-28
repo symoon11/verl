@@ -9,7 +9,7 @@ python -m recipe.tree.main_tree \
     data.max_response_length=8192 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    actor_rollout_ref.model.path=Qwen/Qwen3-1.7B \
+    actor_rollout_ref.model.path=Qwen/Qwen3-0.6B \
     actor_rollout_ref.model.use_liger=True \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -39,7 +39,7 @@ python -m recipe.tree.main_tree \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
     trainer.project_name=verl_tree \
-    trainer.experiment_name=qwen3_1.7b_easy \
+    trainer.experiment_name=qwen3_0.6b_easy \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
