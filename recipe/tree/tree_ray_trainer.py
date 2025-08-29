@@ -24,7 +24,6 @@ from pprint import pprint
 
 import numpy as np
 from tqdm import tqdm
-from vllm import TokensPrompt
 
 from recipe.tree.tree_utils import BatchTree
 from verl import DataProto

@@ -34,7 +34,8 @@ class Node:
     token_ids: list[int]
     parent: Optional[Node] = None
     children: list[Node] = field(default_factory=list)
-    values: list[float] = field(default_factory=list)
+    count: int = 0
+    value: float = 0.0
     advantage: float = 0.0
 
     def __len__(self) -> int:
@@ -113,30 +114,29 @@ class Tree:
         node = node.branch()
         return node
 
-    def _compute_reward(self, reward_fn: AbstractRewardManager) -> float:
+    def _compute_reward(self, reward_fn: AbstractRewardManager):
         data_source = self.data_item.non_tensor_batch["data_source"]
         ground_truth = self.data_item.non_tensor_batch["reward_model"]["ground_truth"]
         extra_info = self.data_item.non_tensor_batch["extra_info"]
-        scores = []
         for node in self.leaf_nodes:
             response_ids = self._agg_token_ids(node, skip_root_node=True)
             response_str = reward_fn.tokenizer.decode(response_ids, skip_special_tokens=True)
             score = reward_fn.compute_score(data_source, response_str, ground_truth, extra_info)
-            node.values.append(score)
-            scores.append(score)
-        return np.mean(scores)
+            node.value = score
+            node.count = 1
 
     def _compute_value(self, node: Optional[Node] = None):
         node = node or self.root_node
         for child in node.children:
             self._compute_value(node=child)
-            node.values.extend(child.values)
+        node.count = sum([child.count for child in node.children])
+        node.value = sum([child.value * child.count for child in node.children]) / node.count
 
     def _compute_traj_advantage(self, node: Node) -> float:
-        return np.mean(node.values) - np.mean(self.root_node.values)
+        return node.value - self.root_node.value
 
     def _compute_step_advantage(self, node: Node) -> float:
-        return np.mean(node.values) - np.mean(node.parent.values)
+        return node.value - node.parent.value
 
     def _compute_advantage(self, node: Optional[Node] = None, weight: float = 1.0):
         node = node or self.root_node
@@ -164,9 +164,11 @@ class Tree:
         self.curr_node.add_child(node)
         self.leaf_nodes.append(node)
 
-    def postprocess(self, reward_fn: AbstractRewardManager) -> float:
-        score = self._compute_reward(reward_fn)
-        return score
+    def postprocess(self, reward_fn: AbstractRewardManager):
+        self._compute_reward(reward_fn)
+        self._compute_value()
+        self._compute_advantage()
+
 
 
 @dataclass
@@ -192,4 +194,3 @@ class BatchTree:
         for tree in self.trees:
             score = tree.postprocess(reward_fn)
             scores.append(score)
-        print(np.mean(scores))
