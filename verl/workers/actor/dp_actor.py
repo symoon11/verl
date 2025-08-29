@@ -554,6 +554,7 @@ class DataParallelPPOActor(BasePPOActor):
                     policy_loss_fn = LigerFusedLinearGRPOLoss(
                         alpha=self.config.entropy_coeff,
                         beta=self.config.kl_loss_coef,
+                        compiled=not self.config.use_dynamic_bsz,
                         use_ref_model=self.config.use_kl_loss,
                         epsilon_low=self.config.clip_ratio_low,
                         epsilon_high=self.config.clip_ratio_high,
