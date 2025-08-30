@@ -46,7 +46,7 @@ python -m recipe.tree.main_tree \
     trainer.experiment_name=qwen3_1.7b_easy \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=50 \
     trainer.test_freq=10 \
     trainer.total_epochs=10 \
     trainer.val_before_train=True \

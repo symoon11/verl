@@ -4,7 +4,7 @@ python -m recipe.tree.main_tree \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/math/train_easy.parquet \
     data.val_files=$HOME/data/math/test.parquet \
-    data.train_batch_size=32 \
+    data.train_batch_size=128 \
     data.max_prompt_length=2048 \
     data.max_response_length=8192 \
     data.filter_overlong_prompts=True \
@@ -13,7 +13,7 @@ python -m recipe.tree.main_tree \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.model.use_liger=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=32 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.kl_loss_coef=0.0 \
@@ -41,13 +41,13 @@ python -m recipe.tree.main_tree \
     algorithm.use_kl_in_reward=False \
     algorithm.norm_adv_by_std_in_grpo=False \
     trainer.critic_warmup=0 \
-    trainer.logger='["console"]' \
+    trainer.logger='["console","wandb"]' \
     trainer.project_name=verl_tree \
     trainer.experiment_name=qwen3_0.6b_easy \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=50 \
     trainer.test_freq=10 \
     trainer.total_epochs=10 \
-    trainer.val_before_train=False \
+    trainer.val_before_train=True \
     custom_reward_function.path=recipe/tree/reward_function.py
