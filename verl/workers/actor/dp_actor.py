@@ -555,7 +555,7 @@ class DataParallelPPOActor(BasePPOActor):
                     elif self.config.loss_agg_mode == "seq-mean-token-mean":
                         loss_type = "grpo"
                     elif self.config.loss_agg_mode == "seq-mean-token-sum-norm":
-                        loss_type = "dr-grpo"
+                        loss_type = "dr_grpo"
                     else:
                         raise ValueError(f"Invalid loss_agg_mode: {self.config.loss_agg_mode}")
 
