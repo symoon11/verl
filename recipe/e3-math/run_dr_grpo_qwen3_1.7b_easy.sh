@@ -44,7 +44,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
     trainer.project_name='verl_e3_math' \
-    trainer.experiment_name='grpo_qwen3_1.7b_easy' \
+    trainer.experiment_name='dr_grpo_qwen3_1.7b_easy' \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
