@@ -1,6 +1,7 @@
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 # Copyright 2023-2024 SGLang Team
 # Copyright 2025 ModelBest Inc. and/or its affiliates
+# Copyright 2025 SNU MLLAB
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +22,8 @@ import logging
 import os
 
 import torch
+from liger_kernel.chunked_loss import LigerFusedLinearGRPOLoss
+from liger_kernel.transformers.fsdp import _FSDPForwardRedirection
 from torch import nn
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
@@ -279,6 +282,122 @@ class DataParallelPPOActor(BasePPOActor):
 
             return entropy, log_probs
 
+    def _get_last_hidden_state(self, micro_batch) -> torch.Tensor:
+        """
+        Returns:
+            last_hidden_state: # (bs, response_len, hidden_size)
+        """
+        response_length = micro_batch["responses"].size(-1)
+        multi_modal_inputs = {}
+        if "multi_modal_inputs" in micro_batch.keys():
+            if "image_bound" in micro_batch["multi_modal_inputs"][0]:  # minicpm-o logic
+                for key in micro_batch["multi_modal_inputs"][0].keys():
+                    multi_modal_inputs[key] = [inputs[key] for inputs in micro_batch["multi_modal_inputs"]]
+            else:
+                for key in micro_batch["multi_modal_inputs"][0].keys():
+                    multi_modal_inputs[key] = torch.cat(
+                        [inputs[key] for inputs in micro_batch["multi_modal_inputs"]], dim=0
+                    )
+
+        with torch.autocast(device_type=self.device_name, dtype=torch.bfloat16):
+            input_ids = micro_batch["input_ids"]
+            batch_size, seqlen = input_ids.shape
+            attention_mask = micro_batch["attention_mask"]
+            position_ids = micro_batch["position_ids"]
+            if position_ids.dim() == 3:  # qwen2vl mrope
+                position_ids = position_ids.transpose(0, 1)  # (bsz, 3, seqlen) -> (3, bsz, seqlen)
+
+            if self.use_remove_padding:
+                input_ids_rmpad, indices, cu_seqlens, *_ = unpad_input(
+                    input_ids.unsqueeze(-1), attention_mask
+                )  # input_ids_rmpad (total_nnz, ...)
+                input_ids_rmpad = input_ids_rmpad.transpose(0, 1)  # (1, total_nnz)
+
+                # unpad the position_ids to align the rotary
+                if position_ids.dim() == 3:
+                    position_ids_rmpad = (
+                        index_first_axis(rearrange(position_ids, "c b s ... -> (b s) c ..."), indices)
+                        .transpose(0, 1)
+                        .unsqueeze(1)
+                    )  # (3, bsz, seqlen) -> (3, 1, bsz * seqlen)
+                else:
+                    position_ids_rmpad = index_first_axis(
+                        rearrange(position_ids.unsqueeze(-1), "b s ... -> (b s) ..."), indices
+                    ).transpose(0, 1)
+
+                if "image_bound" in multi_modal_inputs:
+                    from verl.utils.dataset.vision_utils import process_multi_modal_inputs_for_minicpmo
+
+                    multi_modal_inputs = process_multi_modal_inputs_for_minicpmo(
+                        input_ids, attention_mask, position_ids, cu_seqlens, multi_modal_inputs
+                    )
+
+                # pad and slice the inputs if sp > 1
+                if self.use_ulysses_sp:
+                    is_vlm_model = "multi_modal_inputs" in micro_batch.keys()
+                    if is_vlm_model:
+                        # vlm model's inputs will be sliced after embedding
+                        input_ids_rmpad, position_ids_rmpad, pad_size = ulysses_pad(
+                            input_ids_rmpad,
+                            position_ids_rmpad=position_ids_rmpad,
+                            sp_size=self.ulysses_sequence_parallel_size,
+                        )
+                    else:
+                        input_ids_rmpad, position_ids_rmpad, pad_size = ulysses_pad_and_slice_inputs(
+                            input_ids_rmpad,
+                            position_ids_rmpad=position_ids_rmpad,
+                            sp_size=self.ulysses_sequence_parallel_size,
+                        )
+
+                output = self.actor_module.model(
+                    input_ids=input_ids_rmpad,
+                    attention_mask=None,
+                    position_ids=position_ids_rmpad,
+                    **multi_modal_inputs,
+                    use_cache=False,
+                )  # prevent model thinks we are generating
+
+                last_hidden_state = output.last_hidden_state.squeeze(0)
+
+                # gather last_hidden_state if sp > 1
+                if self.use_ulysses_sp:
+                    # gather and unpad for the ulysses sp
+                    last_hidden_state = gather_outputs_and_unpad(
+                        last_hidden_state,
+                        gather_dim=0,
+                        unpad_dim=0,
+                        padding_size=pad_size,
+                    )
+                # pad back to (bsz, seqlen, hidden_size)
+                full_last_hidden_state = pad_input(
+                    hidden_states=last_hidden_state,
+                    indices=indices,
+                    batch=batch_size,
+                    seqlen=seqlen,
+                )
+
+                # only return response part:
+                last_hidden_state = full_last_hidden_state[
+                    :, -response_length - 1 : -1
+                ]  # (bsz, response_length, hidden_size)
+
+            else:  # not using rmpad and no ulysses sp
+                output = self.actor_module.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    **multi_modal_inputs,
+                    use_cache=False,
+                )  # prevent model thinks we are generating
+
+                last_hidden_state = output.last_hidden_state
+
+                last_hidden_state = last_hidden_state[
+                    :, -response_length - 1 : -1
+                ]  # (bsz, response_length, hidden_size)
+
+            return last_hidden_state
+
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
 
@@ -396,6 +515,8 @@ class DataParallelPPOActor(BasePPOActor):
 
         on_policy = len(mini_batches) == 1 and self.config.ppo_epochs == 1
 
+        compiled = not self.config.use_dynamic_bsz and len(data) % self.config.ppo_mini_batch_size == 0
+
         metrics = {}
         for _ in range(self.config.ppo_epochs):
             for batch_idx, mini_batch in enumerate(mini_batches):
@@ -414,66 +535,72 @@ class DataParallelPPOActor(BasePPOActor):
                     micro_batch = micro_batch.to(get_device_id())
                     micro_batch_metrics = {}
                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
+                    responses = model_inputs["responses"]
+                    response_length = responses.size(-1)
                     response_mask = model_inputs["response_mask"]
-                    old_log_prob = model_inputs["old_log_probs"]
-                    rollout_log_probs = model_inputs["rollout_log_probs"] if self.config.tis_imp_ratio_cap > 0 else None
                     advantages = model_inputs["advantages"]
 
-                    entropy_coeff = self.config.entropy_coeff
-                    loss_agg_mode = self.config.loss_agg_mode
+                    if self.config.use_kl_loss:
+                        ref_log_prob = model_inputs["ref_log_prob"]
+                    else:
+                        ref_log_prob = None
+
+                    if on_policy:
+                        old_log_prob = None
+                    else:
+                        old_log_prob = model_inputs["old_log_probs"]
+
+                    if self.config.loss_agg_mode == "token-mean":
+                        loss_type = "bnpo"
+                    elif self.config.loss_agg_mode == "seq-mean-token-mean":
+                        loss_type = "grpo"
+                    elif self.config.loss_agg_mode == "seq-mean-token-sum-norm":
+                        loss_type = "dr-grpo"
+                    else:
+                        raise ValueError(f"Invalid loss_agg_mode: {self.config.loss_agg_mode}")
 
                     if self.config.use_dynamic_bsz:
                         loss_scale_factor = response_mask.shape[0] / self.config.ppo_mini_batch_size
                     else:
                         loss_scale_factor = 1 / self.gradient_accumulation
 
-                    # all return: (bsz, response_length)
-                    calculate_entropy = False
-                    if entropy_coeff != 0:
-                        calculate_entropy = True
-                    entropy, log_prob = self._forward_micro_batch(
-                        model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                    last_hidden_state = _FSDPForwardRedirection()(
+                        self.actor_module, self._get_last_hidden_state, model_inputs
                     )
 
-                    if on_policy:
-                        old_log_prob = log_prob.detach()
-                    else:
-                        old_log_prob = model_inputs["old_log_probs"]
-
-                    loss_mode = self.config.policy_loss.get("loss_mode", "vanilla")
-                    # vanilla -> verl.trainer.ppo.core_algos.compute_policy_loss_vanilla
-                    # gpg -> verl.trainer.ppo.core_algos.compute_policy_loss_gpg
-                    # clip_cov -> verl.trainer.ppo.core_algos.compute_policy_loss_clip_cov
-                    policy_loss_fn = get_policy_loss_fn(loss_mode)
-                    pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower = policy_loss_fn(
-                        old_log_prob=old_log_prob,
-                        log_prob=log_prob,
-                        advantages=advantages,
-                        response_mask=response_mask,
-                        loss_agg_mode=loss_agg_mode,
-                        config=self.config,
-                        rollout_log_probs=rollout_log_probs,
+                    policy_loss_fn = LigerFusedLinearGRPOLoss(
+                        alpha=self.config.entropy_coeff,
+                        beta=self.config.kl_loss_coef,
+                        compiled=compiled,
+                        use_ref_model=self.config.use_kl_loss,
+                        epsilon_low=self.config.clip_ratio_low,
+                        epsilon_high=self.config.clip_ratio_high,
+                        loss_type=loss_type,
+                        max_completion_length=response_length,
+                        temperature=temperature,
                     )
 
-                    if entropy_coeff != 0:
-                        entropy_loss = agg_loss(loss_mat=entropy, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
+                    pg_loss, pg_metrics = _FSDPForwardRedirection()(
+                        self.actor_module,
+                        policy_loss_fn,
+                        last_hidden_state,
+                        self.actor_module.lm_head.weight,
+                        responses,
+                        response_mask,
+                        advantages,
+                        bias=self.actor_module.lm_head.bias,
+                        ref_per_token_logps=ref_log_prob,
+                        old_per_token_logps=old_log_prob,
+                    )
 
-                        # compute policy loss
-                        policy_loss = pg_loss - entropy_loss * entropy_coeff
-                    else:
-                        policy_loss = pg_loss
+                    policy_loss = pg_loss
 
-                    if self.config.use_kl_loss:
-                        ref_log_prob = model_inputs["ref_log_prob"]
-                        # compute kl loss
-                        kld = kl_penalty(
-                            logprob=log_prob, ref_logprob=ref_log_prob, kl_penalty=self.config.kl_loss_type
-                        )
-                        kl_loss = agg_loss(loss_mat=kld, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
-
-                        policy_loss = policy_loss + kl_loss * self.config.kl_loss_coef
+                    if self.config.kl_loss_coef != 0:
+                        kl_loss = pg_metrics[0]
                         micro_batch_metrics["actor/kl_loss"] = kl_loss.detach().item() * loss_scale_factor
                         micro_batch_metrics["actor/kl_coef"] = self.config.kl_loss_coef
+
+                    pg_clipfrac = pg_metrics[-1]
 
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
@@ -486,8 +613,6 @@ class DataParallelPPOActor(BasePPOActor):
                         {
                             "actor/pg_loss": pg_loss.detach().item() * loss_scale_factor,
                             "actor/pg_clipfrac": pg_clipfrac.detach().item(),
-                            "actor/ppo_kl": ppo_kl.detach().item(),
-                            "actor/pg_clipfrac_lower": pg_clipfrac_lower.detach().item(),
                         }
                     )
                     append_to_dict(metrics, micro_batch_metrics)

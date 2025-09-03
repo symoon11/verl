@@ -264,6 +264,7 @@ def compute_grpo_outcome_advantage(
     response_mask: torch.Tensor,
     index: np.ndarray,
     epsilon: float = 1e-6,
+    mask_truncated_samples: bool = False,
     norm_adv_by_std_in_grpo: bool = True,
     config: Optional[AlgoConfig] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -280,6 +281,8 @@ def compute_grpo_outcome_advantage(
             index array for grouping
         epsilon: `(float)`
             small value to avoid division by zero
+        mask_truncated_samples: `(bool)`
+            whether to zero gradients for truncated trajectories
         norm_adv_by_std_in_grpo: `(bool)`
             whether to scale the GRPO advantage
         config: `(Optional[AlgoConfig])`
@@ -316,7 +319,9 @@ def compute_grpo_outcome_advantage(
             else:
                 raise ValueError(f"no score in prompt index: {idx}")
         for i in range(bsz):
-            if norm_adv_by_std_in_grpo:
+            if mask_truncated_samples and scores[i] == 0 and response_mask[i, -1] == 1:
+                scores[i] = 0
+            elif norm_adv_by_std_in_grpo:
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]

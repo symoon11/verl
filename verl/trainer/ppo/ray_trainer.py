@@ -199,6 +199,7 @@ def compute_advantage(
     gamma: float = 1.0,
     lam: float = 1.0,
     num_repeat: int = 1,
+    mask_truncated_samples: bool = False,
     norm_adv_by_std_in_grpo: bool = True,
     config: Optional[AlgoConfig] = None,
 ) -> DataProto:
@@ -213,6 +214,8 @@ def compute_advantage(
         gamma (float, optional): Discount factor for future rewards. Defaults to 1.0.
         lam (float, optional): Lambda parameter for GAE. Defaults to 1.0.
         num_repeat (int, optional): Number of times to repeat the computation. Defaults to 1.
+        mask_truncated_samples (bool, optional): Whether to zero gradients for truncated trajectories in
+            GRPO. Defaults to False.
         norm_adv_by_std_in_grpo (bool, optional): Whether to normalize advantages by standard deviation in
             GRPO. Defaults to True.
         config (dict, optional): Configuration dictionary for algorithm settings. Defaults to None.
@@ -249,6 +252,7 @@ def compute_advantage(
             token_level_rewards=data.batch["token_level_rewards"],
             response_mask=grpo_calculation_mask,
             index=data.non_tensor_batch["uid"],
+            mask_truncated_samples=mask_truncated_samples,
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
         )
         data.batch["advantages"] = advantages
@@ -1103,6 +1107,7 @@ class RayPPOTrainer:
                             gamma=self.config.algorithm.gamma,
                             lam=self.config.algorithm.lam,
                             num_repeat=self.config.actor_rollout_ref.rollout.n,
+                            mask_truncated_samples=self.config.algorithm.mask_truncated_samples,
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                             config=self.config.algorithm,
                         )
