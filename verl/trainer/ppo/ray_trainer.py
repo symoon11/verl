@@ -214,7 +214,7 @@ def compute_advantage(
         gamma (float, optional): Discount factor for future rewards. Defaults to 1.0.
         lam (float, optional): Lambda parameter for GAE. Defaults to 1.0.
         num_repeat (int, optional): Number of times to repeat the computation. Defaults to 1.
-        mask_truncated_samples (bool, optional): Whether to zero gradients for truncated trajectories in 
+        mask_truncated_samples (bool, optional): Whether to zero gradients for truncated trajectories in
             GRPO. Defaults to False.
         norm_adv_by_std_in_grpo (bool, optional): Whether to normalize advantages by standard deviation in
             GRPO. Defaults to True.
