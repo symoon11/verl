@@ -5,4 +5,3 @@ data:
 
 compute_reward_function:
   path: recipe/e3-math/reward_function.py
-

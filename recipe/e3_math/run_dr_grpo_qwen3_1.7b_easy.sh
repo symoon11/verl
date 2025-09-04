@@ -1,6 +1,5 @@
 set -x
 
-
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/e3-math/train_easy.parquet \

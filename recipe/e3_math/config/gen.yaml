@@ -1,0 +1,24 @@
+seed: 0
+
+data:
+  path: ???
+  prompt_key: prompt
+  output_path: ???
+
+model:
+  path: ???
+
+rollout:
+  seed: ${seed}
+  temperature: 1.0
+  top_p: 1.0
+  top_k: -1
+  prompt_length: 1024
+  response_length: 32768
+  dtype: bfloat16
+  gpu_memory_utilization: 0.9
+  enforce_eager: True
+  tensor_model_parallel_size: 1
+  max_num_batched_tokens: 65536
+  max_model_len: null
+  max_num_seqs: 1024
