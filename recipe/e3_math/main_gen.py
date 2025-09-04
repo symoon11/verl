@@ -1,7 +1,7 @@
+import os
 from pprint import pprint
 
 import hydra
-import os
 from datasets import load_dataset
 from omegaconf import DictConfig, OmegaConf
 from vllm import LLM, SamplingParams
@@ -15,7 +15,7 @@ def main(config: DictConfig):
 
     # load dataset
     dataset = load_dataset(**config.dataset)
-    prompts = [example["prompt"] for example in dataset]
+    prompts = [prompt for prompt in dataset["prompt"]]
 
     # create LLM
     llm = LLM(**config.llm)

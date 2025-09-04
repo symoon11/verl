@@ -1,0 +1,8 @@
+experiment_name: grpo_qwen3_1.7b_easy
+step: 100
+output_dir: data/e3_math/${experiment_name}/global_step_${step}
+
+dataset:
+  path: parquet
+  data_dir: ${output_dir}
+  split: train
