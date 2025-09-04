@@ -1,24 +1,25 @@
+experiment_name: ???
+step: ???
 seed: ???
+model_path: checkpoints/e3_math/${experiment_name}/global_step_${step}/actor/huggingface
+output_path: data/e3_math/${experiment_name}/global_step_${step}/gen_test_${seed}.parquet
 
-data:
-  path: ???
-  prompt_key: prompt
-  output_path: ???
+dataset:
+  path: parquet
+  data_dir: data/e3_math
+  data_files: test.parquet
+  split: train
 
-model:
-  path: ???
-
-rollout:
+llm:
+  model: ${model_path}
+  tensor_parallel_size: 1
+  dtype: bfloat16
   seed: ${seed}
+  gpu_memory_utilization: 0.9
+  enforce_eager: False
+
+sampling_params:
   temperature: 1.0
   top_p: 1.0
   top_k: -1
-  prompt_length: 1024
-  response_length: 32768
-  dtype: bfloat16
-  gpu_memory_utilization: 0.9
-  enforce_eager: True
-  tensor_model_parallel_size: 1
-  max_num_batched_tokens: 65536
-  max_model_len: null
-  max_num_seqs: 1024
+  max_tokens: 32768

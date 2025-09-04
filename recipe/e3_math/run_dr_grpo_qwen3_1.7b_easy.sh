@@ -2,8 +2,8 @@ set -x
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
-    data.train_files=$HOME/data/e3_math/train_easy.parquet \
-    data.val_files=$HOME/data/e3_math/test.parquet \
+    data.train_files=data/e3_math/train_easy.parquet \
+    data.val_files=data/e3_math/test.parquet \
     data.train_batch_size=128 \
     data.max_prompt_length=1024 \
     data.max_response_length=8192 \

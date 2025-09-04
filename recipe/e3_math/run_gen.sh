@@ -1,10 +1,10 @@
 set -x
 
-DATA_PATH=$HOME/data/e3_math/test.parquet
-OUTPUT_PATH=$HOME/data/e3_math/grpo_qwen3_1.7b_easy/global_step_100/gen_test.parquet
-MODEL_PATH=checkpoints/e3_math/grpo_qwen3_1.7b_easy/global_step_100/actor/huggingface
+experiment_name=grpo_qwen3_1.7b_easy
+step=100
+seed=0
 
 python -m recipe.e3_math.main_gen \
-    data.path=$DATA_PATH \
-    data.output_path=$OUTPUT_PATH \
-    model.path=$MODEL_PATH \
+    experiment_name=${experiment_name} \
+    step=${step} \
+    seed=${seed} $@

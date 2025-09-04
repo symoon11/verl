@@ -118,8 +118,7 @@ ENV/
 *.lock
 
 # data
-*.parquet
-
+**/data
 
 # local logs
 logs
@@ -127,8 +126,9 @@ log
 outputs
 .history
 
-# sangwon
+# users
 *sangwon*
+*seungyong*
 
 # slurm
 **/slurm

@@ -1,8 +1,8 @@
 set -x
 
-MODEL_PATH=checkpoints/e3_math/grpo_qwen3_1.7b_easy/global_step_100/actor
+experiment_name=grpo_qwen3_1.7b_easy
+step=100
 
-python -m verl.model_merger merge \
-    --backend fsdp \
-    --local_dir $MODEL_PATH \
-    --target_dir $MODEL_PATH/huggingface
+python -m recipe.e3_math.main_merge \
+    experiment_name=${experiment_name} \
+    step=${step} $@
