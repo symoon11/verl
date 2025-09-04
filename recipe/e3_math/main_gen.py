@@ -14,7 +14,6 @@ def main(config: DictConfig):
 
     # Dataset
     dataset = load_dataset(**config.dataset)
-    dataset = dataset.select(range(1))
     prompts = [example["prompt"] for example in dataset]
 
     # vLLM
