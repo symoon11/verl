@@ -1,10 +1,10 @@
 experiment_name: ???
 step: ???
-model_path: checkpoints/e3_math/${experiment_name}/global_step_${step}/actor
+model_dir: checkpoints/e3_math/${experiment_name}/global_step_${step}/actor
 
 merger_config:
   operation: merge
   backend: fsdp
-  target_dir: ${model_path}/huggingface
-  local_dir: ${model_path}
-  hf_model_config_path: ${model_path}/huggingface
+  target_dir: ${model_dir}/huggingface
+  local_dir: ${model_dir}
+  hf_model_config_path: ${model_dir}/huggingface

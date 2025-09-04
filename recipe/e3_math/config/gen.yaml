@@ -1,8 +1,8 @@
 experiment_name: ???
 step: ???
 seed: ???
-model_path: checkpoints/e3_math/${experiment_name}/global_step_${step}/actor/huggingface
-output_path: data/e3_math/${experiment_name}/global_step_${step}/gen_test_${seed}.parquet
+model_dir: checkpoints/e3_math/${experiment_name}/global_step_${step}/actor/huggingface
+output_dir: data/e3_math/${experiment_name}/global_step_${step}
 
 dataset:
   path: parquet
@@ -11,7 +11,7 @@ dataset:
   split: train
 
 llm:
-  model: ${model_path}
+  model: ${model_dir}
   tensor_parallel_size: 1
   dtype: bfloat16
   seed: ${seed}
