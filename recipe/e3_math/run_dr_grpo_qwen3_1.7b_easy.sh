@@ -2,8 +2,8 @@ set -x
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
-    data.train_files=$HOME/data/e3-math/train_easy.parquet \
-    data.val_files=$HOME/data/e3-math/test.parquet \
+    data.train_files=$HOME/data/e3_math/train_easy.parquet \
+    data.val_files=$HOME/data/e3_math/test.parquet \
     data.train_batch_size=128 \
     data.max_prompt_length=1024 \
     data.max_response_length=8192 \
@@ -42,7 +42,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_e3_math' \
+    trainer.project_name='e3_math' \
     trainer.experiment_name='dr_grpo_qwen3_1.7b_easy' \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
@@ -50,4 +50,4 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=50 \
     trainer.test_freq=10 \
     trainer.total_epochs=10 \
-    custom_reward_function.path=recipe/e3-math/reward_function.py $@
+    custom_reward_function.path=recipe/e3_math/reward_function.py $@
