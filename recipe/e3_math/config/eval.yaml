@@ -1,5 +1,5 @@
-experiment_name: grpo_qwen3_1.7b_easy
-step: 100
+experiment_name: ???
+step: ???
 output_dir: data/e3_math/${experiment_name}/global_step_${step}
 
 dataset:
