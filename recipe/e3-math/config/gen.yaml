@@ -1,0 +1,24 @@
+project_name: ???
+experiment_name: ???
+step: ???
+seed: ???
+data_source_key: ???
+
+data:
+  path: ~/data/e3-math/test.parquet
+  prompt_key: prompt
+
+compute_reward_function:
+  path: recipe/e3-math/reward_function.py
+
+llm:
+  seed: ${seed}
+  model: checkpoints/${project_name}/${experiment_name}/global_step_${step}/actor/huggingface
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.9
+
+sampling_params:
+  temperature: 1.0
+  top_p: 1.0
+  top_k: -1
+  max_tokens: 32768
