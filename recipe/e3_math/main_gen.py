@@ -19,7 +19,7 @@ def main(config: DictConfig):
 
     # vLLM
     llm = LLM(**config.llm)
-    sampling_params = SamplingParams(**config.sampling)
+    sampling_params = SamplingParams(**config.sampling_params)
 
     # Generation
     outputs = llm.chat(prompts, sampling_params=sampling_params)

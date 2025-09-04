@@ -132,3 +132,4 @@ outputs
 
 # slurm
 **/slurm
+sbatch.py
