@@ -1,8 +1,5 @@
-experiment_name: ???
-step: ???
+model_name: ???
 seed: ???
-model_name: ${experiment_name}/global_step_${step}
-model_dir: checkpoints/e3_math/${model_name}/actor/huggingface
 output_dir: data/e3_math/${model_name}
 
 dataset:
@@ -12,7 +9,7 @@ dataset:
   split: train
 
 llm:
-  model: ${model_dir}
+  model: ${mode_name}
   tensor_parallel_size: 1
   dtype: bfloat16
   seed: ${seed}
