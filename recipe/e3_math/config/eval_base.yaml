@@ -1,0 +1,7 @@
+model_name: ???
+output_dir: data/e3_math/${model_name}
+
+dataset:
+  path: parquet
+  data_dir: ${output_dir}
+  split: train
